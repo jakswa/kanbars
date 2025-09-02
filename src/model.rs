@@ -69,18 +69,6 @@ impl KanbanColumns {
         columns
     }
 
-    pub fn max_ticket_count(&self) -> usize {
-        [
-            self.todo.len(),
-            self.in_progress.len(),
-            self.review.len(),
-            self.done.len(),
-        ]
-        .iter()
-        .max()
-        .cloned()
-        .unwrap_or(0)
-    }
 }
 
 #[derive(Debug)]

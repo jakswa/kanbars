@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -19,216 +19,193 @@ pub fn draw_ui(frame: &mut Frame, columns: &KanbanColumns) {
 }
 
 fn draw_kanban_board(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
-    let layout = determine_layout(area.width);
-    
-    match layout {
-        LayoutType::FourColumn => draw_four_column_board(frame, area, columns),
-        LayoutType::TwoColumn => draw_two_column_board(frame, area, columns),
-        LayoutType::Vertical => draw_vertical_board(frame, area, columns),
+    // Always use horizontal lanes for better space utilization
+    draw_horizontal_lanes(frame, area, columns);
+}
+
+fn draw_horizontal_lanes(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
+    // Count non-empty lanes
+    let mut active_lanes = Vec::new();
+    if !columns.todo.is_empty() {
+        active_lanes.push(("TO DO", &columns.todo, Color::Cyan));
     }
-}
-
-#[derive(Debug)]
-enum LayoutType {
-    Vertical,
-    TwoColumn,
-    FourColumn,
-}
-
-fn determine_layout(terminal_width: u16) -> LayoutType {
-    match terminal_width {
-        0..=79 => LayoutType::Vertical,
-        80..=119 => LayoutType::TwoColumn,
-        _ => LayoutType::FourColumn,
+    if !columns.in_progress.is_empty() {
+        active_lanes.push(("IN PROGRESS", &columns.in_progress, Color::Yellow));
     }
-}
-
-fn draw_four_column_board(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
-    let col_width = (area.width - 3) / 4;
-    let widths = vec![
-        Constraint::Length(col_width),
-        Constraint::Length(col_width),
-        Constraint::Length(col_width),
-        Constraint::Length(col_width),
-    ];
-    
-    let max_rows = columns.max_ticket_count();
-    let mut rows = Vec::new();
-    
-    let header = Row::new(vec![
-        Cell::from("TO DO").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Cell::from("IN PROGRESS").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("REVIEW").style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Cell::from("DONE").style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-    ])
-    .height(1)
-    .bottom_margin(1);
-    
-    for i in 0..max_rows {
-        let todo_cell = columns.todo.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        let progress_cell = columns.in_progress.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        let review_cell = columns.review.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        let done_cell = columns.done.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        rows.push(Row::new(vec![todo_cell, progress_cell, review_cell, done_cell]).height(3));
+    if !columns.review.is_empty() {
+        active_lanes.push(("REVIEW", &columns.review, Color::Magenta));
+    }
+    if !columns.done.is_empty() {
+        active_lanes.push(("DONE", &columns.done, Color::Green));
     }
     
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("🦀 KANBARS - JIRA Board (press 'q' to quit)"));
-    
-    frame.render_widget(table, area);
-}
-
-fn draw_two_column_board(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-    
-    let left_columns = KanbanColumns {
-        todo: columns.todo.clone(),
-        in_progress: columns.in_progress.clone(),
-        review: Vec::new(),
-        done: Vec::new(),
-    };
-    
-    let right_columns = KanbanColumns {
-        todo: Vec::new(),
-        in_progress: Vec::new(),
-        review: columns.review.clone(),
-        done: columns.done.clone(),
-    };
-    
-    draw_two_column_section(frame, chunks[0], &left_columns, true);
-    draw_two_column_section(frame, chunks[1], &right_columns, false);
-}
-
-fn draw_two_column_section(frame: &mut Frame, area: Rect, columns: &KanbanColumns, is_left: bool) {
-    let col_width = (area.width - 3) / 2;
-    let widths = vec![
-        Constraint::Length(col_width),
-        Constraint::Length(col_width),
-    ];
-    
-    let (col1, col2, header1, header2, color1, color2) = if is_left {
-        (
-            &columns.todo,
-            &columns.in_progress,
-            "TO DO",
-            "IN PROGRESS",
-            Color::Cyan,
-            Color::Yellow,
-        )
-    } else {
-        (
-            &columns.review,
-            &columns.done,
-            "REVIEW",
-            "DONE",
-            Color::Magenta,
-            Color::Green,
-        )
-    };
-    
-    let max_rows = col1.len().max(col2.len());
-    let mut rows = Vec::new();
-    
-    let header = Row::new(vec![
-        Cell::from(header1).style(Style::default().fg(color1).add_modifier(Modifier::BOLD)),
-        Cell::from(header2).style(Style::default().fg(color2).add_modifier(Modifier::BOLD)),
-    ])
-    .height(1)
-    .bottom_margin(1);
-    
-    for i in 0..max_rows {
-        let cell1 = col1.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        let cell2 = col2.get(i)
-            .map(|t| format_ticket(t, col_width))
-            .unwrap_or_else(|| Cell::from(""));
-        
-        rows.push(Row::new(vec![cell1, cell2]).height(3));
+    // If no tickets at all, show a message
+    if active_lanes.is_empty() {
+        let message = Paragraph::new("No tickets found! 🎉")
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title("🦀 KANBARS"))
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(message, area);
+        return;
     }
     
-    let title = if is_left { "TODO / IN PROGRESS" } else { "REVIEW / DONE" };
-    
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title(title));
-    
-    frame.render_widget(table, area);
-}
-
-fn draw_vertical_board(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
-    let chunks = Layout::default()
+    // Split into title and active lanes
+    let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
+            Constraint::Length(2),     // Title bar
+            Constraint::Min(0),        // Rest for lanes
         ])
         .split(area);
     
-    draw_column_section(frame, chunks[0], &columns.todo, "TO DO", Color::Cyan);
-    draw_column_section(frame, chunks[1], &columns.in_progress, "IN PROGRESS", Color::Yellow);
-    draw_column_section(frame, chunks[2], &columns.review, "REVIEW", Color::Magenta);
-    draw_column_section(frame, chunks[3], &columns.done, "DONE", Color::Green);
+    // Split the rest into equal lanes for active categories only
+    let lane_count = active_lanes.len();
+    let lane_constraints: Vec<Constraint> = (0..lane_count)
+        .map(|_| Constraint::Ratio(1, lane_count as u32))
+        .collect();
+    
+    let lane_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(lane_constraints)
+        .split(main_chunks[1]);
+    
+    // Title
+    let title = Block::default()
+        .borders(Borders::BOTTOM)
+        .title("🦀 KANBARS - JIRA Board (press 'q' to quit)");
+    frame.render_widget(title, main_chunks[0]);
+    
+    // Render only non-empty lanes
+    for (i, (title, tickets, color)) in active_lanes.iter().enumerate() {
+        draw_lane(frame, lane_chunks[i], tickets, title, *color);
+    }
 }
 
-fn draw_column_section(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, color: Color) {
-    let width = area.width - 2;
-    let mut rows = Vec::new();
+fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, color: Color) {
+    // Split lane into label and content
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(12),  // Lane label
+            Constraint::Min(0),      // Tickets
+        ])
+        .split(area);
     
-    for ticket in tickets.iter().take(((area.height - 3) / 2) as usize) {
-        rows.push(Row::new(vec![format_ticket(ticket, width)]).height(2));
+    // Lane label with colored border
+    let label = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(Style::default().fg(color))
+        .title(title)
+        .title_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
+    frame.render_widget(label, chunks[0]);
+    
+    // Build ticket lines
+    let mut lines: Vec<Line> = Vec::new();
+    let content_width = chunks[1].width as usize;
+    
+    for (i, ticket) in tickets.iter().enumerate() {
+        if i > 0 && lines.len() < area.height as usize - 1 {
+            // Add subtle separator between tickets
+            lines.push(Line::from(""));
+        }
+        
+        // Format ticket on 1-2 lines
+        let emoji = ticket.ticket_type.emoji();
+        let key = &ticket.key;
+        let summary = &ticket.summary;
+        
+        // Extract assignee username (before @ if email, otherwise full string)
+        let assignee = ticket.assignee
+            .split('@')
+            .next()
+            .unwrap_or(&ticket.assignee)
+            .trim();
+        
+        // First line: emoji + key + assignee + as much summary as fits
+        let prefix = if !assignee.is_empty() && assignee != "unassigned" {
+            format!("{} {} @{} ", emoji, key, assignee)
+        } else {
+            format!("{} {} ", emoji, key)
+        };
+        let prefix_len = prefix.len() + 3; // +3 for " • "
+        
+        let available_for_summary = content_width.saturating_sub(prefix_len);
+        
+        // Build the main ticket line
+        let mut main_line_spans = vec![
+            Span::raw(format!("{} ", emoji)),
+            Span::styled(key.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ];
+        
+        // Add assignee if present
+        if !assignee.is_empty() && assignee != "unassigned" {
+            main_line_spans.push(Span::styled(
+                format!(" @{}", assignee),
+                Style::default().fg(Color::Blue),
+            ));
+        }
+        
+        main_line_spans.push(Span::styled(" • ", Style::default().fg(Color::DarkGray)));
+        
+        // Add summary text and handle wrapping
+        if summary.len() <= available_for_summary {
+            // Simple case: everything fits on one line
+            main_line_spans.push(Span::raw(summary.clone()));
+            lines.push(Line::from(main_line_spans));
+        } else {
+            // Need to wrap to second line
+            let words: Vec<&str> = summary.split_whitespace().collect();
+            let mut first_line = String::new();
+            let mut second_line = String::new();
+            let mut current_len = 0;
+            
+            for word in &words {
+                if current_len + word.len() + 1 <= available_for_summary {
+                    if !first_line.is_empty() {
+                        first_line.push(' ');
+                        current_len += 1;
+                    }
+                    first_line.push_str(word);
+                    current_len += word.len();
+                } else if second_line.is_empty() || second_line.len() + word.len() + 1 <= content_width - 4 {
+                    if !second_line.is_empty() {
+                        second_line.push(' ');
+                    }
+                    second_line.push_str(word);
+                }
+            }
+            
+            main_line_spans.push(Span::raw(first_line));
+            lines.push(Line::from(main_line_spans));
+            
+            // Add continuation line if we have more text
+            if !second_line.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::raw("    "), // Indent
+                    Span::styled(second_line, Style::default().fg(Color::Gray)),
+                ]));
+            }
+        }
+        
+        // Stop if we're running out of vertical space
+        if lines.len() >= area.height as usize - 1 {
+            break;
+        }
     }
     
-    let table = Table::new(rows, vec![Constraint::Percentage(100)])
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .title_style(Style::default().fg(color).add_modifier(Modifier::BOLD)));
+    // Add overflow indicator if needed
+    if tickets.len() > tickets.iter().take_while(|_| lines.len() < area.height as usize - 1).count() {
+        let remaining = tickets.len() - tickets.iter().take_while(|_| lines.len() < area.height as usize - 1).count();
+        lines.push(Line::from(Span::styled(
+            format!("  ...and {} more", remaining),
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+    }
     
-    frame.render_widget(table, area);
-}
-
-fn format_ticket(ticket: &Ticket, width: u16) -> Cell<'static> {
-    let emoji = ticket.ticket_type.emoji().to_string();
+    let content = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::NONE))
+        .style(Style::default());
     
-    let available_width = (width as usize).saturating_sub(2);
-    let summary = if ticket.summary.len() > available_width {
-        format!("{}...", &ticket.summary[..available_width.saturating_sub(3)])
-    } else {
-        ticket.summary.clone()
-    };
-    
-    let lines = vec![
-        Line::from(vec![
-            Span::raw(emoji.clone()),
-            Span::raw(" "),
-            Span::styled(ticket.key.clone(), Style::default().add_modifier(Modifier::BOLD)),
-        ]),
-        Line::from(summary),
-    ];
-    
-    Cell::from(lines)
+    frame.render_widget(content, chunks[1]);
 }
