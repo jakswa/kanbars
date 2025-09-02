@@ -2,6 +2,12 @@
 name = "kanbars"
 version = "0.1.0"
 edition = "2024"
+description = "Lightning-fast terminal kanban board for JIRA"
+license = "MIT"
+authors = ["Jake Swanson"]
+repository = "https://github.com/yourusername/kanbars"
+keywords = ["jira", "kanban", "tui", "terminal", "productivity"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 ratatui = "0.29"
