@@ -23,6 +23,14 @@ pub struct Args {
     /// Generate a sample config file
     #[arg(long)]
     pub init: bool,
+    
+    /// Auto-refresh interval in seconds (default: 60)
+    #[arg(short = 'r', long = "refresh", default_value = "60")]
+    pub refresh: u64,
+    
+    /// Display once and exit (useful with watch command)
+    #[arg(long = "once")]
+    pub once: bool,
 }
 
 impl Args {

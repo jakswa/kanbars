@@ -7,7 +7,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
 };
-use std::{error::Error, io};
+use std::{error::Error, io, time::{Duration, Instant}};
 
 mod cli;
 mod config;
@@ -42,6 +42,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     config.query.jql = args.build_jql(&config.query.jql);
     
+    // Handle --once mode (display and exit)
+    if args.once {
+        let tickets = fetch_tickets(&config)?;
+        let columns = KanbanColumns::from_tickets(tickets);
+        
+        // Simple non-TUI output for use with watch
+        println!("🦀 KANBARS - JIRA Board\n");
+        columns.print_simple();
+        return Ok(());
+    }
+    
     // Fetch tickets before setting up terminal
     let tickets = fetch_tickets(&config)?;
     let columns = KanbanColumns::from_tickets(tickets);
@@ -52,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_app(&mut terminal, columns);
+    let res = run_app(&mut terminal, columns, &config, args.refresh);
 
     disable_raw_mode()?;
     execute!(
@@ -69,13 +80,72 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, columns: KanbanColumns) -> Result<(), Box<dyn Error>> {
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    mut columns: KanbanColumns,
+    config: &Config,
+    refresh_seconds: u64,
+) -> Result<(), Box<dyn Error>> {
+    let mut last_refresh = Instant::now();
+    let refresh_interval = Duration::from_secs(refresh_seconds);
+    let mut paused = false;
+    let mut last_update_time = chrono::Local::now();
+    
     loop {
-        terminal.draw(|f| draw_ui(f, &columns))?;
-
-        if let Event::Key(key) = event::read()? {
-            if key.code == KeyCode::Char('q') {
-                return Ok(());
+        // Draw UI with current state
+        terminal.draw(|f| draw_ui(f, &columns, Some(&last_update_time), paused, refresh_seconds))?;
+        
+        // Check for keyboard input with timeout
+        let timeout = if paused {
+            Duration::from_millis(100) // Short timeout when paused
+        } else {
+            // Calculate time until next refresh
+            let elapsed = last_refresh.elapsed();
+            if elapsed >= refresh_interval {
+                Duration::from_millis(0) // Refresh immediately
+            } else {
+                refresh_interval - elapsed
+            }
+        };
+        
+        if event::poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('r') => {
+                        // Manual refresh
+                        match fetch_tickets(config) {
+                            Ok(tickets) => {
+                                columns = KanbanColumns::from_tickets(tickets);
+                                last_update_time = chrono::Local::now();
+                                last_refresh = Instant::now();
+                            }
+                            Err(e) => {
+                                // TODO: Show error in UI
+                                eprintln!("Refresh failed: {}", e);
+                            }
+                        }
+                    }
+                    KeyCode::Char('p') => {
+                        // Toggle pause
+                        paused = !paused;
+                    }
+                    _ => {}
+                }
+            }
+        } else if !paused && last_refresh.elapsed() >= refresh_interval {
+            // Auto-refresh
+            match fetch_tickets(config) {
+                Ok(tickets) => {
+                    columns = KanbanColumns::from_tickets(tickets);
+                    last_update_time = chrono::Local::now();
+                    last_refresh = Instant::now();
+                }
+                Err(e) => {
+                    // TODO: Show error in UI
+                    eprintln!("Auto-refresh failed: {}", e);
+                    last_refresh = Instant::now(); // Reset timer even on error
+                }
             }
         }
     }

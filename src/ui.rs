@@ -7,7 +7,13 @@ use ratatui::{
     Frame,
 };
 
-pub fn draw_ui(frame: &mut Frame, columns: &KanbanColumns) {
+pub fn draw_ui(
+    frame: &mut Frame, 
+    columns: &KanbanColumns,
+    last_update: Option<&chrono::DateTime<chrono::Local>>,
+    paused: bool,
+    refresh_seconds: u64,
+) {
     let size = frame.area();
     
     let chunks = Layout::default()
@@ -15,15 +21,29 @@ pub fn draw_ui(frame: &mut Frame, columns: &KanbanColumns) {
         .constraints([Constraint::Min(0)])
         .split(size);
 
-    draw_kanban_board(frame, chunks[0], columns);
+    draw_kanban_board(frame, chunks[0], columns, last_update, paused, refresh_seconds);
 }
 
-fn draw_kanban_board(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
+fn draw_kanban_board(
+    frame: &mut Frame, 
+    area: Rect, 
+    columns: &KanbanColumns,
+    last_update: Option<&chrono::DateTime<chrono::Local>>,
+    paused: bool,
+    refresh_seconds: u64,
+) {
     // Always use horizontal lanes for better space utilization
-    draw_horizontal_lanes(frame, area, columns);
+    draw_horizontal_lanes(frame, area, columns, last_update, paused, refresh_seconds);
 }
 
-fn draw_horizontal_lanes(frame: &mut Frame, area: Rect, columns: &KanbanColumns) {
+fn draw_horizontal_lanes(
+    frame: &mut Frame, 
+    area: Rect, 
+    columns: &KanbanColumns,
+    last_update: Option<&chrono::DateTime<chrono::Local>>,
+    paused: bool,
+    refresh_seconds: u64,
+) {
     // Count non-empty lanes
     let mut active_lanes = Vec::new();
     if !columns.todo.is_empty() {
@@ -70,10 +90,27 @@ fn draw_horizontal_lanes(frame: &mut Frame, area: Rect, columns: &KanbanColumns)
         .constraints(lane_constraints)
         .split(main_chunks[1]);
     
-    // Title
+    // Title with status information
+    let mut title_str = String::from("🦀 KANBARS");
+    
+    // Add last update time
+    if let Some(update_time) = last_update {
+        title_str.push_str(&format!(" | Updated: {}", update_time.format("%H:%M:%S")));
+    }
+    
+    // Add refresh status
+    if paused {
+        title_str.push_str(" | ⏸ PAUSED");
+    } else {
+        title_str.push_str(&format!(" | ↻ {}s", refresh_seconds));
+    }
+    
+    // Add controls hint
+    title_str.push_str(" | q:quit r:refresh p:pause");
+    
     let title = Block::default()
         .borders(Borders::BOTTOM)
-        .title("🦀 KANBARS - JIRA Board (press 'q' to quit)");
+        .title(title_str);
     frame.render_widget(title, main_chunks[0]);
     
     // Render only non-empty lanes

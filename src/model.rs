@@ -69,6 +69,84 @@ impl KanbanColumns {
         columns
     }
 
+    pub fn print_simple(&self) {
+        // Print simple text output for --once mode
+        if !self.todo.is_empty() {
+            println!("📋 TO DO ({})", self.todo.len());
+            for ticket in &self.todo {
+                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
+                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
+                } else {
+                    String::new()
+                };
+                println!("  {} {}{} - {}", 
+                    ticket.ticket_type.emoji(), 
+                    ticket.key, 
+                    assignee,
+                    ticket.summary
+                );
+            }
+            println!();
+        }
+        
+        if !self.in_progress.is_empty() {
+            println!("🚀 IN PROGRESS ({})", self.in_progress.len());
+            for ticket in &self.in_progress {
+                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
+                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
+                } else {
+                    String::new()
+                };
+                println!("  {} {}{} - {}", 
+                    ticket.ticket_type.emoji(), 
+                    ticket.key, 
+                    assignee,
+                    ticket.summary
+                );
+            }
+            println!();
+        }
+        
+        if !self.review.is_empty() {
+            println!("🔍 REVIEW ({})", self.review.len());
+            for ticket in &self.review {
+                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
+                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
+                } else {
+                    String::new()
+                };
+                println!("  {} {}{} - {}", 
+                    ticket.ticket_type.emoji(), 
+                    ticket.key, 
+                    assignee,
+                    ticket.summary
+                );
+            }
+            println!();
+        }
+        
+        if !self.done.is_empty() {
+            println!("✅ DONE ({})", self.done.len());
+            for ticket in &self.done {
+                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
+                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
+                } else {
+                    String::new()
+                };
+                println!("  {} {}{} - {}", 
+                    ticket.ticket_type.emoji(), 
+                    ticket.key, 
+                    assignee,
+                    ticket.summary
+                );
+            }
+            println!();
+        }
+        
+        if self.todo.is_empty() && self.in_progress.is_empty() && self.review.is_empty() && self.done.is_empty() {
+            println!("No tickets found! 🎉");
+        }
+    }
 }
 
 #[derive(Debug)]
