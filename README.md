@@ -2,6 +2,8 @@
 
 Lightning-fast terminal kanban board for JIRA. No more 300MB browser tabs.
 
+<img width="1516" height="788" alt="wee" src="https://github.com/user-attachments/assets/18de15c5-c420-49d1-b5e3-aeec7b79790e" />
+
 ## Features
 
 - **Horizontal swim lanes** - only shows lanes with tickets
