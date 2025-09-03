@@ -5,6 +5,21 @@ pub struct Ticket {
     pub summary: String,
     pub status: String,
     pub assignee: String,
+    // Extended fields (fetched on demand)
+    pub description: Option<String>,
+    pub priority: Option<String>,
+    pub reporter: Option<String>,
+    pub created: Option<String>,
+    pub updated: Option<String>,
+    pub labels: Option<Vec<String>>,
+    pub comments: Option<Vec<Comment>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Comment {
+    pub author: String,
+    pub created: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +68,41 @@ impl KanbanColumns {
             done: Vec::new(),
         }
     }
+    
+    
+    pub fn total_tickets(&self) -> usize {
+        self.todo.len() + self.in_progress.len() + self.review.len() + self.done.len()
+    }
+    
+    pub fn get_ticket_by_index(&self, global_index: usize) -> Option<&Ticket> {
+        let mut current_index = 0;
+        
+        // Check TODO
+        if global_index < current_index + self.todo.len() {
+            return self.todo.get(global_index - current_index);
+        }
+        current_index += self.todo.len();
+        
+        // Check IN_PROGRESS
+        if global_index < current_index + self.in_progress.len() {
+            return self.in_progress.get(global_index - current_index);
+        }
+        current_index += self.in_progress.len();
+        
+        // Check REVIEW
+        if global_index < current_index + self.review.len() {
+            return self.review.get(global_index - current_index);
+        }
+        current_index += self.review.len();
+        
+        // Check DONE
+        if global_index < current_index + self.done.len() {
+            return self.done.get(global_index - current_index);
+        }
+        
+        None
+    }
+    
 
     pub fn from_tickets(tickets: Vec<Ticket>) -> Self {
         let mut columns = KanbanColumns::new();

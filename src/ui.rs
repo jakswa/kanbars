@@ -3,9 +3,24 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
+
+#[derive(Debug, Clone)]
+pub enum UiMode {
+    Board,
+    Detail,
+}
+
+#[derive(Debug)]
+pub struct AppState {
+    pub mode: UiMode,
+    pub selected_index: usize,  // Global index across all tickets
+    pub detail_ticket: Option<Ticket>,
+    pub detail_scroll: usize,
+    pub detail_max_scroll: usize,  // Track the max valid scroll position
+}
 
 pub fn draw_ui(
     frame: &mut Frame, 
@@ -13,15 +28,24 @@ pub fn draw_ui(
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
+    app_state: &mut AppState,
 ) {
     let size = frame.area();
     
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0)])
-        .split(size);
-
-    draw_kanban_board(frame, chunks[0], columns, last_update, paused, refresh_seconds);
+    match app_state.mode {
+        UiMode::Board => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0)])
+                .split(size);
+            draw_kanban_board(frame, chunks[0], columns, last_update, paused, refresh_seconds, app_state);
+        }
+        UiMode::Detail => {
+            if app_state.detail_ticket.is_some() {
+                draw_ticket_detail(frame, size, app_state);
+            }
+        }
+    }
 }
 
 fn draw_kanban_board(
@@ -31,9 +55,10 @@ fn draw_kanban_board(
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
+    app_state: &AppState,
 ) {
     // Always use horizontal lanes for better space utilization
-    draw_horizontal_lanes(frame, area, columns, last_update, paused, refresh_seconds);
+    draw_horizontal_lanes(frame, area, columns, last_update, paused, refresh_seconds, app_state);
 }
 
 fn draw_horizontal_lanes(
@@ -43,6 +68,7 @@ fn draw_horizontal_lanes(
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
+    app_state: &AppState,
 ) {
     // Count non-empty lanes
     let mut active_lanes = Vec::new();
@@ -106,20 +132,30 @@ fn draw_horizontal_lanes(
     }
     
     // Add controls hint
-    title_str.push_str(" | q:quit r:refresh p:pause");
+    title_str.push_str(" | q:quit r:refresh p:pause ↑↓/jk:navigate Enter:detail");
     
     let title = Block::default()
         .borders(Borders::BOTTOM)
         .title(title_str);
     frame.render_widget(title, main_chunks[0]);
     
-    // Render only non-empty lanes
+    // Render only non-empty lanes with proper selection tracking
+    let mut global_ticket_index = 0;
     for (i, (title, tickets, color)) in active_lanes.iter().enumerate() {
-        draw_lane(frame, lane_chunks[i], tickets, title, *color);
+        // Calculate which ticket in this lane is selected (if any)
+        let selected_ticket = if app_state.selected_index >= global_ticket_index && 
+                                 app_state.selected_index < global_ticket_index + tickets.len() {
+            Some(app_state.selected_index - global_ticket_index)
+        } else {
+            None
+        };
+        
+        draw_lane(frame, lane_chunks[i], tickets, title, *color, selected_ticket);
+        global_ticket_index += tickets.len();
     }
 }
 
-fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, color: Color) {
+fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, color: Color, selected_ticket: Option<usize>) {
     // Split lane into label and content
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -142,6 +178,8 @@ fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, col
     let content_width = chunks[1].width as usize;
     
     for (i, ticket) in tickets.iter().enumerate() {
+        let is_selected = selected_ticket == Some(i);
+        
         if i > 0 && lines.len() < area.height as usize - 1 {
             // Add subtle separator between tickets
             lines.push(Line::from(""));
@@ -170,10 +208,25 @@ fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, col
         let available_for_summary = content_width.saturating_sub(prefix_len);
         
         // Build the main ticket line
-        let mut main_line_spans = vec![
+        let key_style = if is_selected {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD).add_modifier(Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        };
+        
+        let mut main_line_spans = vec![];
+        
+        // Add selection indicator
+        if is_selected {
+            main_line_spans.push(Span::styled("▶ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+        } else {
+            main_line_spans.push(Span::raw("  "));
+        }
+        
+        main_line_spans.extend(vec![
             Span::raw(format!("{} ", emoji)),
-            Span::styled(key.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        ];
+            Span::styled(key.clone(), key_style),
+        ]);
         
         // Add assignee if present
         if !assignee.is_empty() && assignee != "unassigned" {
@@ -245,4 +298,162 @@ fn draw_lane(frame: &mut Frame, area: Rect, tickets: &[Ticket], title: &str, col
         .style(Style::default());
     
     frame.render_widget(content, chunks[1]);
+}
+
+fn draw_ticket_detail(frame: &mut Frame, area: Rect, app_state: &mut AppState) {
+    let ticket = match &app_state.detail_ticket {
+        Some(t) => t,
+        None => return,
+    };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),    // Header
+            Constraint::Min(0),       // Content
+            Constraint::Length(1),    // Footer
+        ])
+        .split(area);
+    
+    // Header with ticket key and type
+    let header = Block::default()
+        .borders(Borders::BOTTOM)
+        .title(format!("{} {} - {}", 
+            ticket.ticket_type.emoji(),
+            ticket.key,
+            ticket.summary
+        ))
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+    frame.render_widget(header, chunks[0]);
+    
+    // Build content lines
+    let mut lines = Vec::new();
+    
+    // Status and assignee
+    lines.push(Line::from(vec![
+        Span::styled("Status: ", Style::default().fg(Color::Gray)),
+        Span::styled(&ticket.status, Style::default().fg(Color::Yellow)),
+        Span::raw("  "),
+        Span::styled("Assignee: ", Style::default().fg(Color::Gray)),
+        Span::styled(&ticket.assignee, Style::default().fg(Color::Blue)),
+    ]));
+    lines.push(Line::from(""));
+    
+    // Priority if available
+    if let Some(ref priority) = ticket.priority {
+        lines.push(Line::from(vec![
+            Span::styled("Priority: ", Style::default().fg(Color::Gray)),
+            Span::styled(priority, Style::default().fg(Color::Magenta)),
+        ]));
+    }
+    
+    // Reporter if available
+    if let Some(ref reporter) = ticket.reporter {
+        lines.push(Line::from(vec![
+            Span::styled("Reporter: ", Style::default().fg(Color::Gray)),
+            Span::styled(reporter, Style::default().fg(Color::Blue)),
+        ]));
+    }
+    
+    // Created/Updated dates
+    if ticket.created.is_some() || ticket.updated.is_some() {
+        let mut date_spans = Vec::new();
+        if let Some(ref created) = ticket.created {
+            date_spans.push(Span::styled("Created: ", Style::default().fg(Color::Gray)));
+            date_spans.push(Span::styled(created, Style::default().fg(Color::DarkGray)));
+        }
+        if let Some(ref updated) = ticket.updated {
+            if !date_spans.is_empty() {
+                date_spans.push(Span::raw("  "));
+            }
+            date_spans.push(Span::styled("Updated: ", Style::default().fg(Color::Gray)));
+            date_spans.push(Span::styled(updated, Style::default().fg(Color::DarkGray)));
+        }
+        lines.push(Line::from(date_spans));
+    }
+    
+    // Labels if available
+    if let Some(ref labels) = ticket.labels {
+        if !labels.is_empty() {
+            let mut label_spans = vec![
+                Span::styled("Labels: ", Style::default().fg(Color::Gray)),
+            ];
+            for (i, label) in labels.iter().enumerate() {
+                if i > 0 {
+                    label_spans.push(Span::raw(", "));
+                }
+                label_spans.push(Span::styled(label, Style::default().fg(Color::Cyan)));
+            }
+            lines.push(Line::from(label_spans));
+        }
+    }
+    
+    lines.push(Line::from(""));
+    
+    // Description
+    lines.push(Line::from(Span::styled("Description:", Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD))));
+    
+    if let Some(ref desc) = ticket.description {
+        // Split description into lines
+        for line in desc.lines() {
+            lines.push(Line::from(line.to_string()));
+        }
+    } else {
+        lines.push(Line::from(Span::styled("(No description available)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("Note: Full details may not be available. Check JIRA API config.", Style::default().fg(Color::DarkGray))));
+    }
+    
+    // Comments
+    if let Some(ref comments) = ticket.comments {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(format!("Comments ({})", comments.len()), Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD))));
+        for comment in comments {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(&comment.author, Style::default().fg(Color::Blue)),
+                Span::raw(" - "),
+                Span::styled(&comment.created, Style::default().fg(Color::DarkGray)),
+            ]));
+            lines.push(Line::from(&comment.body[..]));
+        }
+    }
+    
+    // Apply scroll offset - ensure we don't scroll past the end
+    let visible_lines = chunks[1].height as usize;
+    let total_lines = lines.len();
+    let max_scroll = total_lines.saturating_sub(visible_lines);
+    
+    // Update the max scroll in app state
+    app_state.detail_max_scroll = max_scroll;
+    
+    // Clamp the current scroll to valid range
+    app_state.detail_scroll = app_state.detail_scroll.min(max_scroll);
+    let actual_scroll = app_state.detail_scroll;
+    
+    let visible_content: Vec<Line> = lines.into_iter()
+        .skip(actual_scroll)
+        .take(visible_lines)
+        .collect();
+    
+    let content = Paragraph::new(visible_content)
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(content, chunks[1]);
+    
+    // Footer with controls and scroll position
+    let scroll_info = if total_lines > visible_lines {
+        format!(" [{}-{}/{}]", 
+            actual_scroll + 1, 
+            (actual_scroll + visible_lines).min(total_lines),
+            total_lines
+        )
+    } else {
+        String::new()
+    };
+    
+    let footer_text = format!("ESC/q: Back  ↑↓/jk: Scroll  PgUp/PgDn: Page{}", scroll_info);
+    let footer = Paragraph::new(footer_text)
+        .style(Style::default().fg(Color::DarkGray))
+        .block(Block::default().borders(Borders::TOP));
+    frame.render_widget(footer, chunks[2]);
 }
