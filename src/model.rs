@@ -159,13 +159,40 @@ enum Column {
 
 fn categorize_status(status: &str) -> Column {
     let status_lower = status.to_lowercase();
+    
+    // Check for common patterns in status names
+    if status_lower.contains("done") || 
+       status_lower.contains("closed") || 
+       status_lower.contains("resolved") ||
+       status_lower.contains("shipped") ||
+       status_lower.contains("complete") {
+        return Column::Done;
+    }
+    
+    if status_lower.contains("progress") || 
+       status_lower.contains("development") ||
+       status_lower.contains("in dev") ||
+       status_lower.contains("coding") {
+        return Column::InProgress;
+    }
+    
+    if status_lower.contains("review") || 
+       status_lower.contains("testing") ||
+       status_lower.contains("qa") ||
+       status_lower.contains("verification") ||
+       status_lower.contains("approval") {
+        return Column::Review;
+    }
+    
+    // Specific exact matches for common statuses
     match status_lower.as_str() {
-        "to do" | "open" | "ready for development" | "backlog" => Column::Todo,
-        "in progress" | "development" => Column::InProgress,
-        "peer review" | "code review" | "qa review" | "product review" | "testing" => {
-            Column::Review
+        "to do" | "todo" | "open" | "new" | "created" | 
+        "ready for development" | "backlog" | "planning" |
+        "ready to start" | "queued" => Column::Todo,
+        _ => {
+            // Default to Todo for unknown statuses
+            // This ensures tickets are visible rather than lost
+            Column::Todo
         }
-        "done" | "shipped" | "closed" | "resolved" => Column::Done,
-        _ => Column::Todo,
     }
 }
