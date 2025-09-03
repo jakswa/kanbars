@@ -12,10 +12,8 @@ Lightning-fast terminal kanban board for JIRA. No more 300MB browser tabs.
 ## Quick Start
 
 ```bash
-# Install
-git clone https://github.com/yourusername/kanbars.git
-cd kanbars
-cargo install --path .
+# Install (simplest method)
+cargo install kanbars
 
 # Set credentials (same as ACLI)
 export JIRA_SITE="yourcompany.atlassian.net"
@@ -24,6 +22,15 @@ export JIRA_API_TOKEN="your-api-token"  # Get from https://id.atlassian.com/mana
 
 # Run
 kanbars
+```
+
+### Alternative Installation
+
+```bash
+# From source
+git clone https://github.com/yourusername/kanbars.git
+cd kanbars
+cargo install --path .
 ```
 
 ## Usage
