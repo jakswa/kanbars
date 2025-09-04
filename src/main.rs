@@ -19,7 +19,7 @@ mod ui;
 use crate::cli::Args;
 use crate::config::Config;
 use crate::jira::fetch_tickets;
-use crate::model::KanbanColumns;
+use crate::model::StatusGroups;
 use crate::ui::{draw_ui, AppState, UiMode};
 use clap::Parser;
 
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Handle --once mode (display and exit)
     if args.once {
         let tickets = fetch_tickets(&config)?;
-        let columns = KanbanColumns::from_tickets(tickets);
+        let columns = StatusGroups::from_tickets(tickets);
         
         // Simple non-TUI output for use with watch
         println!("🦀 KANBARS - JIRA Board\n");
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     // Fetch tickets before setting up terminal
     let tickets = fetch_tickets(&config)?;
-    let columns = KanbanColumns::from_tickets(tickets);
+    let columns = StatusGroups::from_tickets(tickets);
     
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
-    mut columns: KanbanColumns,
+    mut columns: StatusGroups,
     config: &Config,
     refresh_seconds: u64,
 ) -> Result<(), Box<dyn Error>> {
@@ -126,7 +126,7 @@ fn run_app<B: Backend>(
                                 // Manual refresh
                                 match fetch_tickets(config) {
                                     Ok(tickets) => {
-                                        columns = KanbanColumns::from_tickets(tickets);
+                                        columns = StatusGroups::from_tickets(tickets);
                                         last_update_time = chrono::Local::now();
                                         last_refresh = Instant::now();
                                     }
@@ -216,7 +216,7 @@ fn run_app<B: Backend>(
             // Auto-refresh
             match fetch_tickets(config) {
                 Ok(tickets) => {
-                    columns = KanbanColumns::from_tickets(tickets);
+                    columns = StatusGroups::from_tickets(tickets);
                     last_update_time = chrono::Local::now();
                     last_refresh = Instant::now();
                 }

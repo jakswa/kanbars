@@ -1,4 +1,4 @@
-use crate::model::{KanbanColumns, Ticket};
+use crate::model::{StatusGroups, Ticket, get_status_color};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -24,7 +24,7 @@ pub struct AppState {
 
 pub fn draw_ui(
     frame: &mut Frame, 
-    columns: &KanbanColumns,
+    columns: &StatusGroups,
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
@@ -51,7 +51,7 @@ pub fn draw_ui(
 fn draw_kanban_board(
     frame: &mut Frame, 
     area: Rect, 
-    columns: &KanbanColumns,
+    columns: &StatusGroups,
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
@@ -64,25 +64,19 @@ fn draw_kanban_board(
 fn draw_horizontal_lanes(
     frame: &mut Frame, 
     area: Rect, 
-    columns: &KanbanColumns,
+    columns: &StatusGroups,
     last_update: Option<&chrono::DateTime<chrono::Local>>,
     paused: bool,
     refresh_seconds: u64,
     app_state: &AppState,
 ) {
-    // Count non-empty lanes
+    // Build active lanes from dynamic status groups
     let mut active_lanes = Vec::new();
-    if !columns.todo.is_empty() {
-        active_lanes.push(("TO DO", &columns.todo, Color::Cyan));
-    }
-    if !columns.in_progress.is_empty() {
-        active_lanes.push(("IN PROGRESS", &columns.in_progress, Color::Yellow));
-    }
-    if !columns.review.is_empty() {
-        active_lanes.push(("REVIEW", &columns.review, Color::Magenta));
-    }
-    if !columns.done.is_empty() {
-        active_lanes.push(("DONE", &columns.done, Color::Green));
+    for (status, tickets) in &columns.groups {
+        if !tickets.is_empty() {
+            let color = get_status_color(status);
+            active_lanes.push((status.as_str(), tickets, color));
+        }
     }
     
     // If no tickets at all, show a message

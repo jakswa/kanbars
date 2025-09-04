@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Debug, Clone)]
 pub struct Ticket {
     pub key: String,
@@ -52,197 +54,167 @@ impl TicketType {
 }
 
 #[derive(Debug)]
-pub struct KanbanColumns {
-    pub todo: Vec<Ticket>,
-    pub in_progress: Vec<Ticket>,
-    pub review: Vec<Ticket>,
-    pub done: Vec<Ticket>,
+pub struct StatusGroups {
+    pub groups: BTreeMap<String, Vec<Ticket>>,
 }
 
-impl KanbanColumns {
+impl StatusGroups {
     pub fn new() -> Self {
-        KanbanColumns {
-            todo: Vec::new(),
-            in_progress: Vec::new(),
-            review: Vec::new(),
-            done: Vec::new(),
+        StatusGroups {
+            groups: BTreeMap::new(),
         }
     }
     
-    
     pub fn total_tickets(&self) -> usize {
-        self.todo.len() + self.in_progress.len() + self.review.len() + self.done.len()
+        self.groups.values().map(|v| v.len()).sum()
     }
     
     pub fn get_ticket_by_index(&self, global_index: usize) -> Option<&Ticket> {
         let mut current_index = 0;
         
-        // Check TODO
-        if global_index < current_index + self.todo.len() {
-            return self.todo.get(global_index - current_index);
-        }
-        current_index += self.todo.len();
-        
-        // Check IN_PROGRESS
-        if global_index < current_index + self.in_progress.len() {
-            return self.in_progress.get(global_index - current_index);
-        }
-        current_index += self.in_progress.len();
-        
-        // Check REVIEW
-        if global_index < current_index + self.review.len() {
-            return self.review.get(global_index - current_index);
-        }
-        current_index += self.review.len();
-        
-        // Check DONE
-        if global_index < current_index + self.done.len() {
-            return self.done.get(global_index - current_index);
+        for (_status, tickets) in self.groups.iter() {
+            if global_index < current_index + tickets.len() {
+                return tickets.get(global_index - current_index);
+            }
+            current_index += tickets.len();
         }
         
         None
     }
     
-
-    pub fn from_tickets(tickets: Vec<Ticket>) -> Self {
-        let mut columns = KanbanColumns::new();
+    pub fn from_tickets(mut tickets: Vec<Ticket>) -> Self {
+        let mut groups = StatusGroups::new();
         
+        // Sort tickets by status priority first
+        tickets.sort_by(|a, b| {
+            let a_priority = get_status_priority(&a.status);
+            let b_priority = get_status_priority(&b.status);
+            a_priority.cmp(&b_priority)
+        });
+        
+        // Group tickets by their actual status
         for ticket in tickets {
-            match categorize_status(&ticket.status) {
-                Column::Todo => columns.todo.push(ticket),
-                Column::InProgress => columns.in_progress.push(ticket),
-                Column::Review => columns.review.push(ticket),
-                Column::Done => columns.done.push(ticket),
-            }
+            groups.groups
+                .entry(ticket.status.clone())
+                .or_insert_with(Vec::new)
+                .push(ticket);
         }
         
-        columns
+        groups
     }
-
+    
     pub fn print_simple(&self) {
-        // Print simple text output for --once mode
-        if !self.todo.is_empty() {
-            println!("📋 TO DO ({})", self.todo.len());
-            for ticket in &self.todo {
-                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
-                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
-                } else {
-                    String::new()
-                };
-                println!("  {} {}{} - {}", 
-                    ticket.ticket_type.emoji(), 
-                    ticket.key, 
-                    assignee,
-                    ticket.summary
-                );
-            }
-            println!();
-        }
-        
-        if !self.in_progress.is_empty() {
-            println!("🚀 IN PROGRESS ({})", self.in_progress.len());
-            for ticket in &self.in_progress {
-                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
-                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
-                } else {
-                    String::new()
-                };
-                println!("  {} {}{} - {}", 
-                    ticket.ticket_type.emoji(), 
-                    ticket.key, 
-                    assignee,
-                    ticket.summary
-                );
-            }
-            println!();
-        }
-        
-        if !self.review.is_empty() {
-            println!("🔍 REVIEW ({})", self.review.len());
-            for ticket in &self.review {
-                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
-                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
-                } else {
-                    String::new()
-                };
-                println!("  {} {}{} - {}", 
-                    ticket.ticket_type.emoji(), 
-                    ticket.key, 
-                    assignee,
-                    ticket.summary
-                );
-            }
-            println!();
-        }
-        
-        if !self.done.is_empty() {
-            println!("✅ DONE ({})", self.done.len());
-            for ticket in &self.done {
-                let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
-                    format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
-                } else {
-                    String::new()
-                };
-                println!("  {} {}{} - {}", 
-                    ticket.ticket_type.emoji(), 
-                    ticket.key, 
-                    assignee,
-                    ticket.summary
-                );
-            }
-            println!();
-        }
-        
-        if self.todo.is_empty() && self.in_progress.is_empty() && self.review.is_empty() && self.done.is_empty() {
+        if self.groups.is_empty() {
             println!("No tickets found! 🎉");
+            return;
+        }
+        
+        // Print each status group
+        for (status, tickets) in &self.groups {
+            if !tickets.is_empty() {
+                let emoji = get_status_emoji(status);
+                println!("{} {} ({})", emoji, status.to_uppercase(), tickets.len());
+                
+                for ticket in tickets {
+                    let assignee = if !ticket.assignee.is_empty() && ticket.assignee != "unassigned" {
+                        format!(" @{}", ticket.assignee.split('@').next().unwrap_or(&ticket.assignee))
+                    } else {
+                        String::new()
+                    };
+                    println!("  {} {}{} - {}", 
+                        ticket.ticket_type.emoji(), 
+                        ticket.key, 
+                        assignee,
+                        ticket.summary
+                    );
+                }
+                println!();
+            }
         }
     }
 }
 
-#[derive(Debug)]
-enum Column {
-    Todo,
-    InProgress,
-    Review,
-    Done,
-}
 
-fn categorize_status(status: &str) -> Column {
+// Get a priority value for sorting statuses in logical workflow order
+fn get_status_priority(status: &str) -> u8 {
     let status_lower = status.to_lowercase();
     
-    // Check for common patterns in status names
-    if status_lower.contains("done") || 
-       status_lower.contains("closed") || 
-       status_lower.contains("resolved") ||
-       status_lower.contains("shipped") ||
-       status_lower.contains("complete") {
-        return Column::Done;
+    // Priority 0-3: Todo-like statuses (leftmost)
+    if status_lower.contains("backlog") { return 0; }
+    if status_lower.contains("todo") || status_lower == "to do" { return 1; }
+    if status_lower.contains("open") || status_lower.contains("new") { return 2; }
+    if status_lower.contains("ready for development") || status_lower.contains("ready to start") { return 3; }
+    
+    // Priority 10-19: In Progress-like statuses
+    if status_lower.contains("in progress") || status_lower.contains("in-progress") { return 10; }
+    if status_lower.contains("development") || status_lower.contains("in dev") { return 11; }
+    if status_lower.contains("coding") || status_lower.contains("implementing") { return 12; }
+    if status_lower.contains("ready to ship") || status_lower.contains("ready for deploy") { return 15; }
+    
+    // Priority 20-29: Review-like statuses
+    if status_lower.contains("review") || status_lower.contains("pr") { return 20; }
+    if status_lower.contains("testing") || status_lower.contains("qa") { return 21; }
+    if status_lower.contains("verification") || status_lower.contains("approval") { return 22; }
+    if status_lower.contains("staging") { return 23; }
+    
+    // Priority 30-39: Done-like statuses (rightmost)
+    if status_lower.contains("done") { return 30; }
+    if status_lower.contains("closed") { return 31; }
+    if status_lower.contains("resolved") { return 32; }
+    if status_lower.contains("shipped") || status_lower.contains("deployed") { return 33; }
+    if status_lower.contains("complete") { return 34; }
+    
+    // Unknown statuses go in the middle
+    return 15;
+}
+
+// Get an appropriate emoji for a status
+fn get_status_emoji(status: &str) -> &str {
+    let status_lower = status.to_lowercase();
+    
+    if status_lower.contains("done") || status_lower.contains("closed") || 
+       status_lower.contains("resolved") || status_lower.contains("complete") {
+        return "✅";
+    }
+    if status_lower.contains("progress") || status_lower.contains("development") || 
+       status_lower.contains("coding") || status_lower.contains("ship") {
+        return "🚀";
+    }
+    if status_lower.contains("review") || status_lower.contains("testing") || 
+       status_lower.contains("qa") || status_lower.contains("verification") {
+        return "🔍";
+    }
+    if status_lower.contains("todo") || status_lower.contains("backlog") || 
+       status_lower == "to do" || status_lower.contains("open") {
+        return "📋";
     }
     
-    if status_lower.contains("progress") || 
-       status_lower.contains("development") ||
-       status_lower.contains("in dev") ||
-       status_lower.contains("coding") {
-        return Column::InProgress;
+    // Default emoji for unknown statuses
+    "📌"
+}
+
+// Get color for UI rendering
+pub fn get_status_color(status: &str) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    let status_lower = status.to_lowercase();
+    
+    if status_lower.contains("done") || status_lower.contains("closed") || 
+       status_lower.contains("resolved") || status_lower.contains("complete") {
+        return Color::Green;
+    }
+    if status_lower.contains("progress") || status_lower.contains("development") || 
+       status_lower.contains("coding") || status_lower.contains("ship") {
+        return Color::Yellow;
+    }
+    if status_lower.contains("review") || status_lower.contains("testing") || 
+       status_lower.contains("qa") || status_lower.contains("verification") {
+        return Color::Magenta;
+    }
+    if status_lower.contains("todo") || status_lower.contains("backlog") || 
+       status_lower == "to do" || status_lower.contains("open") {
+        return Color::Cyan;
     }
     
-    if status_lower.contains("review") || 
-       status_lower.contains("testing") ||
-       status_lower.contains("qa") ||
-       status_lower.contains("verification") ||
-       status_lower.contains("approval") {
-        return Column::Review;
-    }
-    
-    // Specific exact matches for common statuses
-    match status_lower.as_str() {
-        "to do" | "todo" | "open" | "new" | "created" | 
-        "ready for development" | "backlog" | "planning" |
-        "ready to start" | "queued" => Column::Todo,
-        _ => {
-            // Default to Todo for unknown statuses
-            // This ensures tickets are visible rather than lost
-            Column::Todo
-        }
-    }
+    // Default color for unknown statuses
+    Color::Blue
 }
