@@ -96,7 +96,6 @@ fn run_app<B: Backend>(
         selected_index: 0,  // Global index across all tickets
         detail_ticket: None,
         detail_scroll: 0,
-        detail_max_scroll: 0,
     };
     
     loop {
@@ -197,15 +196,13 @@ fn run_app<B: Backend>(
                                 }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app_state.detail_scroll < app_state.detail_max_scroll {
-                                    app_state.detail_scroll += 1;
-                                }
+                                app_state.detail_scroll += 1;
                             }
                             KeyCode::PageUp => {
                                 app_state.detail_scroll = app_state.detail_scroll.saturating_sub(10);
                             }
                             KeyCode::PageDown => {
-                                app_state.detail_scroll = (app_state.detail_scroll + 10).min(app_state.detail_max_scroll);
+                                app_state.detail_scroll += 10;
                             }
                             _ => {}
                         }

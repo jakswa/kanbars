@@ -19,7 +19,6 @@ pub struct AppState {
     pub selected_index: usize,  // Global index across all tickets
     pub detail_ticket: Option<Ticket>,
     pub detail_scroll: usize,
-    pub detail_max_scroll: usize,  // Track the max valid scroll position
 }
 
 pub fn draw_ui(
@@ -412,20 +411,12 @@ fn draw_ticket_detail(frame: &mut Frame, area: Rect, app_state: &mut AppState) {
         }
     }
     
-    // Apply scroll offset - ensure we don't scroll past the end
+    // Apply scroll offset
     let visible_lines = chunks[1].height as usize;
     let total_lines = lines.len();
-    let max_scroll = total_lines.saturating_sub(visible_lines);
-    
-    // Update the max scroll in app state
-    app_state.detail_max_scroll = max_scroll;
-    
-    // Clamp the current scroll to valid range
-    app_state.detail_scroll = app_state.detail_scroll.min(max_scroll);
-    let actual_scroll = app_state.detail_scroll;
     
     let visible_content: Vec<Line> = lines.into_iter()
-        .skip(actual_scroll)
+        .skip(app_state.detail_scroll)
         .take(visible_lines)
         .collect();
     
@@ -437,8 +428,8 @@ fn draw_ticket_detail(frame: &mut Frame, area: Rect, app_state: &mut AppState) {
     // Footer with controls and scroll position
     let scroll_info = if total_lines > visible_lines {
         format!(" [{}-{}/{}]", 
-            actual_scroll + 1, 
-            (actual_scroll + visible_lines).min(total_lines),
+            app_state.detail_scroll + 1, 
+            (app_state.detail_scroll + visible_lines).min(total_lines),
             total_lines
         )
     } else {
